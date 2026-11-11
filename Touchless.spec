@@ -1,12 +1,15 @@
 from PyInstaller.utils.hooks import collect_all
+from pathlib import Path
+
+PROJECT_ROOT = Path(SPECPATH)
 
 datas, binaries, hiddenimports = collect_all('mediapipe')
 
 # Add PyArmor runtime folder to the datas
 datas += [
-    ('obf/pyarmor_runtime_000000', 'pyarmor_runtime_000000'),
-    ('hand_landmarker.task', '.'),
-    ('logo.png', '.')
+    (str(PROJECT_ROOT / 'obf' / 'pyarmor_runtime_000000'), 'pyarmor_runtime_000000'),
+    (str(PROJECT_ROOT / 'hand_landmarker.task'), '.'),
+    (str(PROJECT_ROOT / 'logo.png'), '.')
 ]
 
 # Explicitly list hidden imports because PyInstaller cannot scan imports from PyArmor obfuscated scripts
@@ -25,8 +28,8 @@ explicit_hiddenimports = [
 ]
 
 a = Analysis(
-    ['obf/gui.py'],
-    pathex=['obf'],
+    [str(PROJECT_ROOT / 'obf' / 'gui.py')],
+    pathex=[str(PROJECT_ROOT / 'obf')],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports + explicit_hiddenimports,
@@ -53,7 +56,7 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
-    icon='logo.ico',
+    icon=str(PROJECT_ROOT / 'logo.ico'),
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

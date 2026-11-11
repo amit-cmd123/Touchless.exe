@@ -226,7 +226,8 @@ Air mouse/
 ├── gesture_detector.py   # Pinch recognition, click state machines, and scrolling logic
 ├── gui.py               # Modern PyQt6 desktop control center & floating preview
 ├── main.py              # Lightweight OpenCV runtime with high process priority & HUD
-├── requirements.txt      # Core Python library dependencies
+├── requirements.txt      # Pinned application runtime dependencies
+├── requirements-dev.txt  # Runtime, test, and PyInstaller dependencies
 ├── hand_landmarker.task  # Pre-trained MediaPipe float16 hand landmark model (7.8 MB)
 ├── logo.png             # Application brand graphics
 ├── logo.ico             # Application executable icon
@@ -241,12 +242,12 @@ Air mouse/
 
 | Dependency | Minimum Version | Role in System |
 | :--- | :--- | :--- |
-| **Python** | `>= 3.11.0` | Core runtime environment |
-| **OpenCV (`opencv-python`)** | `>= 4.9.0` | Video capture, frame transforms, and HUD rendering |
-| **MediaPipe** | `>= 0.10.14` | Hand landmark detection via Tasks Python API |
-| **PyQt6** | `>= 6.6.1` | Modern GUI desktop application and floating window |
-| **PyAutoGUI** | `>= 0.9.54` | Click execution, mouse down/up, and wheel scroll events |
-| **NumPy** | `>= 1.26.0` | Vector operations and distance calculations |
+| **Python** | `3.11+` | Core runtime; dependencies are pinned and tested in CI on Python 3.13 |
+| **OpenCV (`opencv-contrib-python`)** | `4.13.0.92` | Video capture, frame transforms, and HUD rendering; also satisfies MediaPipe's OpenCV dependency |
+| **MediaPipe** | `0.10.35` | Hand landmark detection via Tasks Python API |
+| **PyQt6** | `6.11.0` | Modern GUI desktop application and floating window |
+| **PyAutoGUI** | `0.9.54` | Click execution, mouse down/up, and wheel scroll events |
+| **NumPy** | `2.3.5` | Vector operations and distance calculations |
 | **Win32 User32 / Kernel32** | Native (`ctypes`) | Instant cursor positioning and thread priority management |
 
 ---
@@ -259,26 +260,37 @@ Air mouse/
 - **Webcam**: Any built-in or external USB webcam capable of 30–60 FPS.
 
 ### 2. Environment Setup
-Clone or extract the project repository, open a terminal in the project root, and create a virtual environment:
+Clone or extract the project repository, open PowerShell in the project root, and create a virtual environment:
 
 ```powershell
 # Create virtual environment
 python -m venv .venv
 
-# Activate virtual environment
-.venv\Scripts\activate
+# Activate virtual environment in PowerShell
+.\.venv\Scripts\Activate.ps1
 
-# Upgrade package manager
+# Upgrade pip to a version that supports current Windows wheel metadata
 python -m pip install --upgrade pip
 
-# Install dependencies
-pip install -r requirements.txt
+# Install the application dependencies
+python -m pip install -r requirements.txt
+
+# For development, tests, and PyInstaller packaging, install instead:
+python -m pip install -r requirements-dev.txt
 ```
 
-### 3. Model Task Verification
-The required model `hand_landmarker.task` is automatically downloaded upon first execution. To pre-fetch it manually:
+`requirements.txt` pins the runtime packages. `requirements-dev.txt` includes those packages plus pytest and PyInstaller. Use a 64-bit Windows Python installation for the supported native wheels and Win32 APIs.
+
+### 3. Model Task
+The `hand_landmarker.task` model is included in the repository and in both PyInstaller builds. If the file is missing from a source checkout, `hand_tracker.py` downloads it on first use. To download and check it manually from the project root:
 ```powershell
-python test_mediapipe.py
+python .\test_mediapipe.py
+```
+
+### 4. Run Tests
+With the development dependencies installed, run the unit tests from the project root. They use mocked mouse actions and do not require a webcam:
+```powershell
+python -m pytest -v
 ```
 
 ---
@@ -317,14 +329,14 @@ The repository includes build configurations for compiling standalone Windows ex
 ### 1. Standard Binary Compilation
 Build a standalone executable using `gui.spec`:
 ```powershell
-pyinstaller gui.spec --clean
+python -m PyInstaller gui.spec --clean
 ```
 The output binary will be located in `dist/gui.exe`.
 
 ### 2. Obfuscated Production Compilation
 For protected commercial or academic distribution, the `obf/` directory contains PyArmor-obfuscated Python scripts. To build the protected release executable:
 ```powershell
-pyinstaller Touchless.spec --clean
+python -m PyInstaller Touchless.spec --clean
 ```
 The resulting executable `dist/Touchless.exe` bundles:
 - PyArmor protected runtime hooks (`pyarmor_runtime_000000`).

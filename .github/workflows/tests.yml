@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - iteration-1-tests
+      - iteration-2-safety
+      - iteration-3-setup-packaging
   pull_request:
     branches:
       - main
@@ -25,8 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          python -m pip install -r requirements-dev.txt
 
       - name: Run tests
         run: python -m pytest -v

@@ -1,5 +1,6 @@
-opencv-python>=4.9.0
-mediapipe>=0.10.14
-numpy>=1.26.0
-pyautogui>=0.9.54
-PyQt6>=6.6.1
+# Runtime dependencies tested with Python 3.13 on Windows.
+opencv-contrib-python==4.13.0.92
+mediapipe==0.10.35
+numpy==2.3.5
+pyautogui==0.9.54
+PyQt6==6.11.0
