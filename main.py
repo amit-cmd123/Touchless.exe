@@ -162,7 +162,7 @@ def main():
         sensitivity_x=SENSITIVITY_X,
         sensitivity_y=SENSITIVITY_Y
     )
-    gd = GestureDetector()
+    gd = GestureDetector(mouse_controller=mc)
 
     cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
     
