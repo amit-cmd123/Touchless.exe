@@ -1,9 +1,12 @@
-import pyautogui
 import time
 
 class GestureDetector:
-    """Detects hand gestures such as left clicks, right clicks, double clicks, and drag mode based on hand landmarks."""
-    def __init__(self, threshold: float = 0.18, hysteresis: float = 0.04):
+    def __init__(
+        self,
+        mouse_controller=None,
+        threshold: float = 0.18,
+        hysteresis: float = 0.04,
+    ):
         """Initializes the GestureDetector.
 
         Args:
@@ -11,6 +14,7 @@ class GestureDetector:
             hysteresis (float): Hysteresis margin to prevent flicker.
         """
         self.threshold = threshold
+        self.mouse_controller = mouse_controller
         self.hysteresis = hysteresis
         self.ema_alpha = 0.8       # Smoothing factor (0.0 < alpha <= 1.0)
 
@@ -37,8 +41,8 @@ class GestureDetector:
         self.smoothed_scroll_dx = 0.0
         self.smoothed_scroll_dy = 0.0
 
-        # Make sure PyAutoGUI pause is minimized for fast click execution
-        pyautogui.PAUSE = 0.0
+        # Keep standalone construction safe for callers that only detect gestures.
+        # Mouse actions are ignored until a controller is supplied.
 
     def _dist(self, p1: tuple[int, int], p2: tuple[int, int]) -> float:
         """Euclidean distance between two pixel coordinates."""
@@ -72,10 +76,8 @@ class GestureDetector:
         if len(points) < 21:
             # Safely release dragging on lost tracking
             if self.is_dragging:
-                try:
-                    pyautogui.mouseUp()
-                except Exception:
-                    pass
+                if self.mouse_controller is not None:
+                    self.mouse_controller.mouse_up()
             self.is_dragging = False
             self.left_pinch_start_time = None
             self.right_pinch_active = False
@@ -144,10 +146,8 @@ class GestureDetector:
                 is_frozen = False
                 active_gesture = "Dragging"
             else:
-                try:
-                    pyautogui.mouseUp()
-                except Exception:
-                    pass
+                if self.mouse_controller is not None:
+                    self.mouse_controller.mouse_up()
                 self.is_dragging = False
                 self.left_pinch_start_time = None
                 active_gesture = "Move"
@@ -171,10 +171,8 @@ class GestureDetector:
             if left_dist_active:
                 elapsed = time.time() - self.left_pinch_start_time
                 if elapsed > 0.5:
-                    try:
-                        pyautogui.mouseDown()
-                    except Exception:
-                        pass
+                    if self.mouse_controller is not None:
+                        self.mouse_controller.mouse_down()
                     self.is_dragging = True
                     is_frozen = False
                     active_gesture = "Dragging"
@@ -182,10 +180,8 @@ class GestureDetector:
                     is_frozen = True
                     active_gesture = "Left Click"
             else:
-                try:
-                    pyautogui.click()
-                except Exception:
-                    pass
+                if self.mouse_controller is not None:
+                    self.mouse_controller.click()
                 self.left_pinch_start_time = None
                 active_gesture = "Left Click"
                 is_frozen = True
@@ -193,19 +189,15 @@ class GestureDetector:
         else:
             # Detect new pinches in order of priority (Right, Double, Left)
             if right_dist_active:
-                try:
-                    pyautogui.rightClick()
-                except Exception:
-                    pass
+                if self.mouse_controller is not None:
+                    self.mouse_controller.right_click()
                 self.right_pinch_active = True
                 active_gesture = "Right Click"
                 is_frozen = True
                 self.scroll_mode = None
             elif double_dist_active:
-                try:
-                    pyautogui.doubleClick()
-                except Exception:
-                    pass
+                if self.mouse_controller is not None:
+                    self.mouse_controller.double_click()
                 self.double_pinch_active = True
                 active_gesture = "Double Click"
                 is_frozen = True
@@ -225,10 +217,8 @@ class GestureDetector:
             self.prev_scroll_pos = rel_y
             self.scroll_accum_y = 0.0
             if self.is_dragging:
-                try:
-                    pyautogui.mouseUp()
-                except Exception:
-                    pass
+                if self.mouse_controller is not None:
+                    self.mouse_controller.mouse_up()
             self.is_dragging = False
             self.left_pinch_start_time = None
             self.right_pinch_active = False
@@ -262,10 +252,8 @@ class GestureDetector:
                         self.scroll_accum_y += dy * sensitivity_y * accel_y
                         clicks_y = int(self.scroll_accum_y)
                         if clicks_y != 0:
-                            try:
-                                pyautogui.scroll(clicks_y)
-                            except Exception:
-                                pass
+                            if self.mouse_controller is not None:
+                                self.mouse_controller.scroll(clicks_y)
                             self.scroll_accum_y -= clicks_y
                 self.prev_scroll_pos = rel_y
             else:
@@ -292,10 +280,8 @@ class GestureDetector:
                             self.scroll_accum_y += dy * sensitivity_y * accel_y
                             clicks_y = int(self.scroll_accum_y)
                             if clicks_y != 0:
-                                try:
-                                    pyautogui.scroll(clicks_y)
-                                except Exception:
-                                    pass
+                                if self.mouse_controller is not None:
+                                    self.mouse_controller.scroll(clicks_y)
                                 self.scroll_accum_y -= clicks_y
                     self.prev_scroll_pos = rel_y
                 else:
