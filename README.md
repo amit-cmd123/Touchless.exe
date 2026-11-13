@@ -352,3 +352,9 @@ The resulting executable `dist/Touchless.exe` bundles:
 3. **USB Port Throughput**: Connect webcams to high-speed USB 3.0 ports to prevent frame drops in MJPEG transfer mode.
 4. **Disabling Video Preview**: In `gui.py`, unchecking "Camera Preview Feed" disables frame conversions (`cv2.cvtColor`, `QImage`, `QPixmap`) entirely, reducing background CPU consumption to $< 4\%$ on modern multi-core systems.
 5. **High Process Priority**: `main.py` automatically requests `HIGH_PRIORITY_CLASS` from Windows `kernel32.dll` to prevent frame stutter when running heavy background tasks or games.
+
+## Calibration and Preferences
+
+Touchless saves cursor sensitivity, cursor smoothing, scroll sensitivity, camera dimensions, and calibration in `%APPDATA%\Touchless\preferences.json` (or the user's home folder when `APPDATA` is unavailable). The GUI controls save changes automatically. Set the `min x`, `max x`, `min y`, and `max y` camera-frame bounds in the calibration fields, then use **Reset Calibration to Full Frame** to restore the default area.
+
+Calibration maps the selected camera-frame hand movement rectangle to the full cursor movement range. The default covers the full 640 × 480 frame, preserving the existing relative cursor behavior. Invalid or incomplete calibration values are ignored and defaults are used. Missing or malformed preference files also fall back to safe defaults. Calibration bounds can be edited in the JSON file using pixel coordinates (`min_x`, `max_x`, `min_y`, `max_y`); each minimum must be less than its maximum and all bounds must stay within the camera frame.

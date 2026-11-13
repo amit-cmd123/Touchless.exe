@@ -5,6 +5,7 @@ from camera import Camera
 from hand_tracker import HandTracker
 from mouse_controller import MouseController
 from gesture_detector import GestureDetector
+from preferences import load_preferences
 
 # Configuration constants
 WINDOW_NAME = "Touchless - Stage 3 (Relative & Gestures)"
@@ -133,6 +134,7 @@ def is_window_minimized(window_name: str) -> bool:
     return False
 
 def main():
+    preferences = load_preferences()
     # Set high process priority class on Windows to prevent background CPU/scheduling throttling
     import sys
     if sys.platform == "win32":
@@ -145,7 +147,7 @@ def main():
 
     # Initialize camera, tracker, and mouse controller
     try:
-        cam = Camera(device_index=CAMERA_INDEX, width=FRAME_WIDTH, height=FRAME_HEIGHT)
+        cam = Camera(device_index=preferences.camera_index, width=preferences.frame_width, height=preferences.frame_height)
     except RuntimeError as e:
         print(f"[ERROR] {e}")
         return
@@ -158,9 +160,11 @@ def main():
         margin_right=MARGIN_RIGHT,
         margin_top=MARGIN_TOP,
         margin_bottom=MARGIN_BOTTOM,
-        smoothing=SMOOTHING_FACTOR,
-        sensitivity_x=SENSITIVITY_X,
-        sensitivity_y=SENSITIVITY_Y
+        smoothing=preferences.smoothing,
+        sensitivity_x=preferences.sensitivity,
+        sensitivity_y=preferences.sensitivity,
+        calibration=preferences.calibration,
+        scroll_sensitivity=preferences.scroll_sensitivity,
     )
     gd = GestureDetector(mouse_controller=mc)
 
