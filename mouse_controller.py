@@ -1,5 +1,6 @@
 import pyautogui
 import ctypes
+from preferences import Calibration
 
 
 class POINT(ctypes.Structure):
@@ -29,9 +30,13 @@ class MouseController:
         sensitivity_y: float = 1.5,
         acceleration_factor: float = 0.08,
         dead_zone: float = 1.2,
+        calibration: Calibration | None = None,
+        scroll_sensitivity: float = 3.0,
     ):
         # Retrieve screen bounds
         self.screen_width, self.screen_height = pyautogui.size()
+        self.frame_w = frame_w
+        self.frame_h = frame_h
 
         # Virtual control box boundaries
         self.ctrl_x1 = margin_left
@@ -45,6 +50,8 @@ class MouseController:
         self.sensitivity_y = sensitivity_y
         self.acceleration_factor = acceleration_factor
         self.dead_zone = dead_zone
+        self.calibration = calibration or Calibration()
+        self.scroll_sensitivity = scroll_sensitivity
 
         # Track previous index finger position
         self.prev_cx = None
@@ -175,10 +182,13 @@ class MouseController:
 
         # If tracking was lost or first frame, initialize previous coordinates.
         if self.prev_cx is None or self.prev_cy is None:
-            self.prev_cx = float(cx)
-            self.prev_cy = float(cy)
-            self.smoothed_cx = float(cx)
-            self.smoothed_cy = float(cy)
+            mapped_x, mapped_y = self.calibration.normalize(
+                cx, cy, self.frame_w, self.frame_h
+            )
+            self.prev_cx = float(mapped_x)
+            self.prev_cy = float(mapped_y)
+            self.smoothed_cx = float(mapped_x)
+            self.smoothed_cy = float(mapped_y)
             self.smoothed_dx = 0.0
             self.smoothed_dy = 0.0
             return False, 0.0, 0.0
@@ -189,13 +199,21 @@ class MouseController:
             or is_clutch_active
             or is_frozen
         ):
-            self.prev_cx = float(cx)
-            self.prev_cy = float(cy)
-            self.smoothed_cx = float(cx)
-            self.smoothed_cy = float(cy)
+            mapped_x, mapped_y = self.calibration.normalize(
+                cx, cy, self.frame_w, self.frame_h
+            )
+            self.prev_cx = float(mapped_x)
+            self.prev_cy = float(mapped_y)
+            self.smoothed_cx = float(mapped_x)
+            self.smoothed_cy = float(mapped_y)
             self.smoothed_dx = 0.0
             self.smoothed_dy = 0.0
             return False, 0.0, 0.0
+
+        # Normalize camera coordinates through the validated user calibration.
+        cx, cy = self.calibration.normalize(
+            cx, cy, self.frame_w, self.frame_h
+        )
 
         # Apply exponential smoothing.
         self.smoothed_cx = (

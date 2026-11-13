@@ -12,13 +12,14 @@ from PyQt6.QtGui import QImage, QPixmap, QFont, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QPushButton, QSlider, QCheckBox, QGroupBox,
-    QFrame
+    QFrame, QDoubleSpinBox
 )
 
 from camera import Camera
 from hand_tracker import HandTracker
 from mouse_controller import MouseController
 from gesture_detector import GestureDetector
+from preferences import load_preferences, save_preferences
 
 # Touchless configuration constants
 CAMERA_INDEX = 0
@@ -28,8 +29,9 @@ MARGIN_LEFT = 0
 MARGIN_RIGHT = 0
 MARGIN_TOP = 0
 MARGIN_BOTTOM = 0
-DEFAULT_SENSITIVITY = 8.5
-DEFAULT_SMOOTHING = 0.55
+_PREFERENCES = load_preferences()
+DEFAULT_SENSITIVITY = _PREFERENCES.sensitivity
+DEFAULT_SMOOTHING = _PREFERENCES.smoothing
 
 class TrackingWorker(QThread):
     """Background worker thread to run camera capture, landmark tracking,
@@ -37,11 +39,12 @@ class TrackingWorker(QThread):
     """
     frame_ready = pyqtSignal(np.ndarray, str, float)  # Emits (annotated_frame, gesture_state, fps)
 
-    def __init__(self, sensitivity: float, smoothing: float, preview_enabled: bool):
+    def __init__(self, sensitivity: float, smoothing: float, preview_enabled: bool, preferences=None):
         super().__init__()
         self.sensitivity = sensitivity
         self.smoothing = smoothing
         self.preview_enabled = preview_enabled
+        self.preferences = preferences or load_preferences()
         self.running = True
 
     def run(self):
@@ -61,9 +64,11 @@ class TrackingWorker(QThread):
             margin_bottom=MARGIN_BOTTOM,
             smoothing=self.smoothing,
             sensitivity_x=self.sensitivity,
-            sensitivity_y=self.sensitivity
+            sensitivity_y=self.sensitivity,
+            calibration=self.preferences.calibration,
+            scroll_sensitivity=self.preferences.scroll_sensitivity
         )
-        gd = GestureDetector()
+        gd = GestureDetector(mouse_controller=mc)
 
         prev_time = time.time()
         smoothed_fps = 0.0
@@ -73,6 +78,8 @@ class TrackingWorker(QThread):
             mc.sensitivity_x = self.sensitivity
             mc.sensitivity_y = self.sensitivity
             mc.smoothing = self.smoothing
+            mc.scroll_sensitivity = self.preferences.scroll_sensitivity
+            mc.calibration = self.preferences.calibration
 
             ret, frame = cam.read()
             if not ret or frame is None:
@@ -202,6 +209,7 @@ class TouchlessGUI(QMainWindow):
         self.sensitivity_val = DEFAULT_SENSITIVITY
         self.smoothing_val = DEFAULT_SMOOTHING
         self.preview_on = True
+        self.preferences = load_preferences()
         self.floating_preview = None
 
         self.init_ui()
@@ -411,6 +419,32 @@ class TouchlessGUI(QMainWindow):
         smooth_sub_layout.addWidget(self.lbl_smooth_val)
         params_layout.addLayout(smooth_sub_layout)
 
+        scroll_title = QLabel("Scroll Sensitivity")
+        scroll_title.setStyleSheet("font-weight: bold; color: #c4c4cc;")
+        params_layout.addWidget(scroll_title)
+        self.scroll_slider = QSlider(Qt.Orientation.Horizontal)
+        self.scroll_slider.setRange(1, 100)
+        self.scroll_slider.setValue(round(self.preferences.scroll_sensitivity * 10))
+        self.scroll_slider.valueChanged.connect(self.on_scroll_changed)
+        params_layout.addWidget(self.scroll_slider)
+
+        self.btn_calibration = QPushButton("Reset Calibration to Full Frame")
+        self.btn_calibration.clicked.connect(self.reset_calibration)
+        params_layout.addWidget(self.btn_calibration)
+
+        calibration_row = QHBoxLayout()
+        self.calibration_spins = []
+        for key, maximum in (("min_x", 640), ("max_x", 640), ("min_y", 480), ("max_y", 480)):
+            spin = QDoubleSpinBox()
+            spin.setRange(0, maximum)
+            spin.setDecimals(0)
+            spin.setPrefix(key.replace("_", " ") + " ")
+            spin.setValue(getattr(self.preferences.calibration, key))
+            spin.editingFinished.connect(self.save_calibration)
+            calibration_row.addWidget(spin)
+            self.calibration_spins.append(spin)
+        params_layout.addLayout(calibration_row)
+
         left_layout.addWidget(group_params)
 
         # Preferences
@@ -495,7 +529,8 @@ class TouchlessGUI(QMainWindow):
         self.worker = TrackingWorker(
             sensitivity=self.sensitivity_val,
             smoothing=self.smoothing_val,
-            preview_enabled=self.preview_on
+            preview_enabled=self.preview_on,
+            preferences=self.preferences
         )
         self.worker.frame_ready.connect(self.update_frame)
         self.worker.finished.connect(self.on_worker_finished)
@@ -596,12 +631,37 @@ class TouchlessGUI(QMainWindow):
         self.lbl_sens_val.setText(f"{self.sensitivity_val:.1f}")
         if self.worker is not None:
             self.worker.sensitivity = self.sensitivity_val
+        self.preferences.sensitivity = self.sensitivity_val
+        save_preferences(self.preferences)
 
     def on_smooth_changed(self, value):
         self.smoothing_val = value / 100.0
         self.lbl_smooth_val.setText(f"{self.smoothing_val:.2f}")
         if self.worker is not None:
             self.worker.smoothing = self.smoothing_val
+        self.preferences.smoothing = self.smoothing_val
+        save_preferences(self.preferences)
+
+    def on_scroll_changed(self, value):
+        self.preferences.scroll_sensitivity = value / 10.0
+        if self.worker is not None:
+            self.worker.preferences.scroll_sensitivity = self.preferences.scroll_sensitivity
+        save_preferences(self.preferences)
+
+    def reset_calibration(self):
+        from preferences import Calibration
+        self.preferences.calibration = Calibration()
+        for spin, value in zip(self.calibration_spins, (0, 640, 0, 480)):
+            spin.setValue(value)
+        save_preferences(self.preferences)
+
+    def save_calibration(self):
+        from preferences import Calibration
+        values = [spin.value() for spin in self.calibration_spins]
+        candidate = Calibration(*values)
+        if candidate.is_valid():
+            self.preferences.calibration = candidate
+            save_preferences(self.preferences)
 
     def on_preview_toggled(self, checked):
         self.preview_on = checked

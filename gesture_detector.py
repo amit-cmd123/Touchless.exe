@@ -246,7 +246,7 @@ class GestureDetector:
                         self.scroll_mode = "down_active"
                         is_scrolling = True
                         dy = self.smoothed_scroll_dy
-                        sensitivity_y = 3.0
+                        sensitivity_y = getattr(self.mouse_controller, "scroll_sensitivity", 3.0)
                         accel_y = 1.0 + 0.08 * abs(dy)
                         
                         self.scroll_accum_y += dy * sensitivity_y * accel_y
@@ -274,7 +274,7 @@ class GestureDetector:
                             self.scroll_mode = "up_active"
                             is_scrolling = True
                             dy = self.smoothed_scroll_dy
-                            sensitivity_y = 3.0
+                            sensitivity_y = getattr(self.mouse_controller, "scroll_sensitivity", 3.0)
                             accel_y = 1.0 + 0.08 * abs(dy)
                             
                             self.scroll_accum_y += dy * sensitivity_y * accel_y
