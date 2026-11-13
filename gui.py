@@ -12,7 +12,7 @@ from PyQt6.QtGui import QImage, QPixmap, QFont, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QPushButton, QSlider, QCheckBox, QGroupBox,
-    QFrame, QDoubleSpinBox
+    QFrame, QDoubleSpinBox, QMessageBox
 )
 
 from camera import Camera
@@ -38,6 +38,7 @@ class TrackingWorker(QThread):
     gesture detection, and relative mouse control without freezing the UI.
     """
     frame_ready = pyqtSignal(np.ndarray, str, float)  # Emits (annotated_frame, gesture_state, fps)
+    error = pyqtSignal(str)
 
     def __init__(self, sensitivity: float, smoothing: float, preview_enabled: bool, preferences=None):
         super().__init__()
@@ -48,98 +49,108 @@ class TrackingWorker(QThread):
         self.running = True
 
     def run(self):
+        cam = None
+        tracker = None
+        mc = None
+        failure_message = None
         try:
-            cam = Camera(device_index=CAMERA_INDEX, width=FRAME_WIDTH, height=FRAME_HEIGHT)
-        except Exception as e:
-            print(f"[ERROR] Camera failed to start: {e}")
-            return
-
-        tracker = HandTracker()
-        mc = MouseController(
-            frame_w=FRAME_WIDTH,
-            frame_h=FRAME_HEIGHT,
-            margin_left=MARGIN_LEFT,
-            margin_right=MARGIN_RIGHT,
-            margin_top=MARGIN_TOP,
-            margin_bottom=MARGIN_BOTTOM,
-            smoothing=self.smoothing,
-            sensitivity_x=self.sensitivity,
-            sensitivity_y=self.sensitivity,
-            calibration=self.preferences.calibration,
-            scroll_sensitivity=self.preferences.scroll_sensitivity
-        )
-        gd = GestureDetector(mouse_controller=mc)
-
-        prev_time = time.time()
-        smoothed_fps = 0.0
-
-        while self.running:
-            # Dynamically update parameters
-            mc.sensitivity_x = self.sensitivity
-            mc.sensitivity_y = self.sensitivity
-            mc.smoothing = self.smoothing
-            mc.scroll_sensitivity = self.preferences.scroll_sensitivity
-            mc.calibration = self.preferences.calibration
-
-            ret, frame = cam.read()
-            if not ret or frame is None:
-                time.sleep(0.002)
-                continue
-
-            # Mirror the frame horizontally
-            frame = cv2.flip(frame, 1)
-
-            # Process hand landmarks
-            # Disable drawing in tracker if preview is disabled to save CPU
-            annotated_frame, hand_present, points, is_palm_open, is_fist, is_index_straight = tracker.process(
-                frame, draw=self.preview_enabled
+            width = self.preferences.frame_width
+            height = self.preferences.frame_height
+            cam = Camera(device_index=self.preferences.camera_index, width=width, height=height)
+            tracker = HandTracker()
+            mc = MouseController(
+                frame_w=width,
+                frame_h=height,
+                margin_left=MARGIN_LEFT,
+                margin_right=MARGIN_RIGHT,
+                margin_top=MARGIN_TOP,
+                margin_bottom=MARGIN_BOTTOM,
+                smoothing=self.smoothing,
+                sensitivity_x=self.sensitivity,
+                sensitivity_y=self.sensitivity,
+                calibration=self.preferences.calibration,
+                scroll_sensitivity=self.preferences.scroll_sensitivity,
             )
+            gd = GestureDetector(mouse_controller=mc)
 
-            # Knuckle (point 5) is used for stable relative cursor movement
-            tracking_pos = None
-            if hand_present and points and len(points) > 5:
-                tracking_pos = points[5]
+            prev_time = time.time()
+            smoothed_fps = 0.0
+            failed_reads = 0
+            while self.running and not self.isInterruptionRequested():
+                mc.sensitivity_x = self.sensitivity
+                mc.sensitivity_y = self.sensitivity
+                mc.smoothing = self.smoothing
+                mc.scroll_sensitivity = self.preferences.scroll_sensitivity
+                mc.calibration = self.preferences.calibration
 
-            # Detect gesture
-            gesture_state = "Move"
-            is_frozen = False
-            if hand_present and points:
-                gesture_state, is_frozen = gd.detect_gesture(
-                    points, is_palm_open=is_palm_open, is_fist=is_fist
+                ret, frame = cam.read()
+                if not ret or frame is None:
+                    failed_reads += 1
+                    if failed_reads >= 10:
+                        failure_message = "The camera stopped providing frames. Check its connection and try again."
+                        break
+                    time.sleep(0.01)
+                    continue
+                failed_reads = 0
+                frame = cv2.flip(frame, 1)
+                annotated_frame, hand_present, points, is_palm_open, is_fist, _ = tracker.process(
+                    frame, draw=self.preview_enabled
                 )
 
-            # Clutch mechanism: Move ONLY during open palm or active dragging
-            movement_allowed = hand_present and (is_palm_open or gd.is_dragging)
-            is_clutch_active = not movement_allowed
+                tracking_pos = points[5] if hand_present and points and len(points) > 5 else None
+                gesture_state = "Move"
+                is_frozen = False
+                if hand_present and points:
+                    gesture_state, is_frozen = gd.detect_gesture(
+                        points, is_palm_open=is_palm_open, is_fist=is_fist
+                    )
+                else:
+                    # Let the gesture state machine release a drag after tracking loss.
+                    gd.detect_gesture([])
 
-            # Update relative cursor
-            dx, dy = 0.0, 0.0
-            if hand_present and tracking_pos:
-                _, dx, dy = mc.move_cursor_relative(
-                    tracking_pos[0], tracking_pos[1], is_clutch_active, is_frozen=is_frozen
-                )
+                movement_allowed = hand_present and (is_palm_open or gd.is_dragging)
+                is_clutch_active = not movement_allowed
+                if hand_present and tracking_pos:
+                    mc.move_cursor_relative(
+                        tracking_pos[0], tracking_pos[1], is_clutch_active, is_frozen=is_frozen
+                    )
 
-            # Calculate FPS
-            curr_time = time.time()
-            dt = curr_time - prev_time
-            prev_time = curr_time
-            fps = 1.0 / dt if dt > 0 else 0.0
-            smoothed_fps = (0.9 * smoothed_fps) + (0.1 * fps)
-
-            # Emit results to main GUI thread
-            self.frame_ready.emit(annotated_frame, gesture_state, smoothed_fps)
-
-        # Cleanup resources
-        try:
-            import pyautogui
-            pyautogui.mouseUp()
-        except Exception:
-            pass
-        tracker.close()
-        cam.release()
+                curr_time = time.time()
+                dt = curr_time - prev_time
+                prev_time = curr_time
+                fps = 1.0 / dt if dt > 0 else 0.0
+                smoothed_fps = (0.9 * smoothed_fps) + (0.1 * fps)
+                self.frame_ready.emit(annotated_frame, gesture_state, smoothed_fps)
+        except Exception as exc:
+            print(f"[ERROR] Tracking worker failed: {exc}")
+            if cam is None:
+                failure_message = "Unable to start the camera. Check that it is connected and available."
+            elif tracker is None:
+                failure_message = "Hand tracking could not be initialized. Check the installation and model file."
+            else:
+                failure_message = "Tracking stopped after an unexpected error. You can try starting it again."
+        finally:
+            if mc is not None:
+                try:
+                    mc.mouse_up()
+                except Exception as exc:
+                    print(f"[WARNING] Could not release the mouse button: {exc}")
+            if tracker is not None:
+                try:
+                    tracker.close()
+                except Exception as exc:
+                    print(f"[WARNING] Could not close hand tracking: {exc}")
+            if cam is not None:
+                try:
+                    cam.release()
+                except Exception as exc:
+                    print(f"[WARNING] Could not release the camera: {exc}")
+            if failure_message:
+                self.error.emit(failure_message)
 
     def stop(self):
         self.running = False
+        self.requestInterruption()
 
 
 class FloatingPreviewWindow(QWidget):
@@ -434,7 +445,15 @@ class TouchlessGUI(QMainWindow):
 
         calibration_row = QHBoxLayout()
         self.calibration_spins = []
-        for key, maximum in (("min_x", 640), ("max_x", 640), ("min_y", 480), ("max_y", 480)):
+        frame_width = self.preferences.frame_width
+        frame_height = self.preferences.frame_height
+
+        for key, maximum in (
+        ("min_x", frame_width),
+        ("max_x", frame_width),
+        ("min_y", frame_height),
+        ("max_y", frame_height),
+        ):
             spin = QDoubleSpinBox()
             spin.setRange(0, maximum)
             spin.setDecimals(0)
@@ -533,6 +552,7 @@ class TouchlessGUI(QMainWindow):
             preferences=self.preferences
         )
         self.worker.frame_ready.connect(self.update_frame)
+        self.worker.error.connect(self.on_worker_error)
         self.worker.finished.connect(self.on_worker_finished)
         self.worker.start()
 
@@ -580,6 +600,9 @@ class TouchlessGUI(QMainWindow):
         self.lbl_fps.setText("0.0")
         if self.floating_preview:
             self.floating_preview.hide()
+
+    def on_worker_error(self, message):
+        QMessageBox.warning(self, "Touchless tracking stopped", message)
 
     def update_frame(self, frame: np.ndarray, gesture_state: str, fps: float):
         # Update Dashboard metrics
@@ -650,9 +673,18 @@ class TouchlessGUI(QMainWindow):
 
     def reset_calibration(self):
         from preferences import Calibration
+
         self.preferences.calibration = Calibration()
-        for spin, value in zip(self.calibration_spins, (0, 640, 0, 480)):
+
+        frame_width = self.preferences.frame_width
+        frame_height = self.preferences.frame_height
+
+        for spin, value in zip(
+            self.calibration_spins,
+            (0, frame_width, 0, frame_height),
+        ):
             spin.setValue(value)
+
         save_preferences(self.preferences)
 
     def save_calibration(self):
@@ -702,6 +734,7 @@ class TouchlessGUI(QMainWindow):
         if self.worker is not None:
             self.worker.stop()
             self.worker.wait()
+            self.worker = None
         if self.floating_preview:
             self.floating_preview.close()
         event.accept()

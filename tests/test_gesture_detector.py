@@ -1,9 +1,11 @@
 from unittest.mock import Mock
+from unittest.mock import patch
 
 from gesture_detector import GestureDetector
 from tests.fixtures.landmarks import double_click_hand
 from tests.fixtures.landmarks import left_click_hand
 from tests.fixtures.landmarks import right_click_hand
+from mouse_controller import MouseController
 
 
 def test_gesture_detector_initial_state():
@@ -131,3 +133,13 @@ def test_tracking_loss_resets_gesture_states():
     assert detector.double_pinch_active is False
     assert gesture == "Move"
     assert frozen is False
+
+
+def test_gesture_action_routes_through_mouse_controller():
+    with patch("mouse_controller.pyautogui.size", return_value=(1920, 1080)), \
+         patch("mouse_controller.pyautogui.rightClick") as right_click:
+        controller = MouseController()
+        detector = GestureDetector(mouse_controller=controller)
+        detector.detect_gesture(right_click_hand())
+
+    right_click.assert_called_once()
