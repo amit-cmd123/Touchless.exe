@@ -154,8 +154,8 @@ def main():
 
     tracker = HandTracker(max_num_hands=1)
     mc = MouseController(
-        frame_w=FRAME_WIDTH,
-        frame_h=FRAME_HEIGHT,
+    frame_w=preferences.frame_width,
+    frame_h=preferences.frame_height,
         margin_left=MARGIN_LEFT,
         margin_right=MARGIN_RIGHT,
         margin_top=MARGIN_TOP,
