@@ -21,6 +21,7 @@ class Camera:
         else:
             self.cap = cv2.VideoCapture(self.device_index)
         if not self.cap.isOpened():
+            self.cap.release()
             raise RuntimeError("Unable to open webcam (device index {0}).".format(self.device_index))
         
         # Configure MJPG format to enable higher frame rates

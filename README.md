@@ -309,6 +309,8 @@ python gui.py
 3. Toggle **Minimize Feed to Corner** to send the camera preview into a draggable, frameless always-on-top corner window.
 4. Uncheck **Camera Preview Feed** to run in background mode for minimal CPU usage.
 
+If camera startup, hand-tracker initialization, or sustained frame capture fails, the GUI shows a short recovery message and restores the tracking controls. Stop and application close release tracked mouse buttons and camera/tracker resources through the worker cleanup path.
+
 ### Option B: Standalone OpenCV HUD Runtime
 Launches the lightweight, low-overhead OpenCV interface:
 
